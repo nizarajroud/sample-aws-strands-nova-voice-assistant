@@ -9,10 +9,11 @@ from strands import tool
 
 logger = logging.getLogger("knowledge_base_tool")
 
-# Configuration
-AGENT_ID = "4EBXLZQW3Q"
-AGENT_ALIAS_ID = "TSTALIASID"
+# Configuration — ctx2-agent on account 026991214828
+AGENT_ID = "77F0DN0ARA"
+AGENT_ALIAS_ID = "KWNRPUN6JR"  # "live" alias → version 1
 REGION = "ca-central-1"
+PROFILE = "csna-operations-sso-828"
 
 
 @tool(name="queryKnowledgeBase")
@@ -31,7 +32,9 @@ def query_knowledge_base(question: str) -> str:
     try:
         logger.info(f"Querying knowledge base: {question[:100]}...")
 
-        client = boto3.client("bedrock-agent-runtime", region_name=REGION)
+        # Use the specific profile for the account that has the agent
+        session = boto3.Session(profile_name=PROFILE, region_name=REGION)
+        client = session.client("bedrock-agent-runtime")
 
         response = client.invoke_agent(
             agentId=AGENT_ID,
