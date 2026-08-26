@@ -1,486 +1,311 @@
 # AWS Strands Nova Voice Assistant
 
-A sophisticated voice-based AI assistant using AWS Strands for multi-agent collaboration to interact with AWS services. The system features real-time voice interaction through Amazon Nova Sonic and intelligent routing between specialized AWS agents.
+> A real-time speech-to-speech voice assistant powered by Amazon Nova Sonic and AWS Strands multi-agent framework.
 
-## 🚀 Features
+Forked from [aws-samples/sample-aws-strands-nova-voice-assistant](https://github.com/aws-samples/sample-aws-strands-nova-voice-assistant) with fixes for SDK v0.11.0 compatibility and WSL2 environment.
 
-- **Voice Interface**: Real-time voice input/output using Amazon Nova Sonic
-- **Multi-Agent Architecture**: Supervisor agent coordinates between specialized agents
-- **AWS Service Integration**: Comprehensive support for EC2, SSM, and AWS Backup operations
-- **Intelligent Routing**: Automatic query routing to appropriate specialized agents
-- **Professional UI**: AWS Cloudscape Design components with chat bubbles and event display
-
-## Authors and acknowledgment
-We would like to thank the following contributors for their valuable input and work on this project _(sorted alphabetically)_:
-
-• Aditya Ambati 
-
-• Anand Krishna Varanasi 
-
-• JAGDISH KOMAKULA 
-
-• Dadi T.V.R.L.Phani Kumar
+---
 
 ## 🏗️ Architecture
 
-The system implements a simplified multi-agent architecture:
+```
+┌──────────────┐     WebSocket      ┌──────────────────┐     Bidirectional     ┌─────────────────┐
+│   Browser    │◄──────────────────►│  Python Backend   │◄─────Stream──────────►│  Amazon Nova    │
+│  (React UI)  │   ws://WSL:8080    │  (WebSocket srv)  │                       │  Sonic (Bedrock)│
+│              │                     │                   │                       │                 │
+│  🎤 Mic In   │                     │  S2sSessionMgr    │                       │  STT + LLM +    │
+│  🔊 Audio Out│                     │  SupervisorAgent  │                       │  TTS (unified)  │
+└──────────────┘                     │  Integration      │                       └────────┬────────┘
+                                     └────────┬──────────┘                                │
+                                              │                                           │
+                                              │ Tool Use                                  │
+                                              ▼                                           │
+                                     ┌──────────────────┐                                 │
+                                     │  Strands Agents   │◄────────────────────────────────┘
+                                     │                   │    (toolUse / toolResult events)
+                                     │  ┌─────────────┐ │
+                                     │  │ Supervisor  │ │  Routes queries to specialists
+                                     │  └──────┬──────┘ │
+                                     │         │        │
+                                     │  ┌──────┼──────┐ │
+                                     │  │      │      │ │
+                                     │  ▼      ▼      ▼ │
+                                     │ EC2   SSM   Backup│  Specialized agents w/ use_aws tool
+                                     └──────────────────┘
+```
 
-![Architecture Diagram](diagrams/strands-arch.svg)
+### Data Flow
 
-### Core Components
+1. **User speaks** → Browser captures audio via Web Audio API (16kHz PCM16)
+2. **Audio chunks** → Sent as base64 over WebSocket to Python backend
+3. **Backend forwards** → Audio events streamed to Nova Sonic via Bedrock bidirectional stream
+4. **Nova Sonic processes** → Speech-to-text, LLM reasoning, text-to-speech (all in one model)
+5. **Tool calls** → If Nova Sonic decides to use a tool, it emits `toolUse` events
+6. **Agent routing** → SupervisorAgent routes to EC2/SSM/Backup specialist agents
+7. **Tool results** → Sent back to Nova Sonic as `toolResult` events
+8. **Audio response** → Nova Sonic generates speech, sent back as `audioOutput` events
+9. **Playback** → Frontend decodes base64 audio and plays via Web Audio API
 
-1. **Supervisor Agent**: Routes queries to specialized AWS agents
-2. **Specialized Agents**:
-   - **EC2 Agent**: Instance management, status checks, and operations
-   - **SSM Agent**: Systems Manager operations, command execution, patch management
-   - **Backup Agent**: AWS Backup configuration, job monitoring, and management
-3. **Voice Integration**: Amazon Nova Sonic for speech-to-text and text-to-speech
-4. **WebSocket Server**: Real-time communication between frontend and backend
+---
 
-### Technology Stack
+## 📋 Prerequisites
 
-- **Backend**: Python 3.12+ with AWS Strands framework
-- **Frontend**: React with AWS Cloudscape Design components
-- **AI Models**: AWS Bedrock Claude 3 Haiku for all agents
-- **Voice Processing**: Amazon Nova Sonic for audio I/O
-- **Package Management**: Standard pip with requirements.txt
+| Requirement | Details |
+|---|---|
+| **Python** | 3.12+ (tested with 3.13) |
+| **Node.js** | 16+ (tested with 22) |
+| **AWS Account** | With Bedrock access in `us-east-1` |
+| **AWS CLI** | v2 configured with SSO |
+| **OS** | WSL2 on Windows (tested) or Linux |
+| **Hardware** | Microphone + speakers |
+| **Browser** | Chrome (for Web Audio API + mic access) |
+
+### AWS Permissions Required
+
+- `bedrock:InvokeModel`
+- `bedrock:InvokeModelWithResponseStream`
+- `bedrock:InvokeModelWithBidirectionalStream` (Nova Sonic)
+- `ec2:Describe*`, `ec2:Start*`, `ec2:Stop*`
+- `ssm:*` (Systems Manager operations)
+- `backup:*` (AWS Backup operations)
+
+---
+
+## 🚀 Quick Start
+
+```bash
+./start.sh
+```
+
+This single command:
+1. Syncs frontend source
+2. Checks AWS credentials (auto SSO login if expired)
+3. Starts backend (port 8080)
+4. Starts frontend (port 3001)
+
+Then open **http://localhost:3001** in Chrome and click **"Start Conversation"**.
+
+---
+
+## 🔧 Manual Setup (First Time)
+
+### 1. Python Virtual Environment
+
+```bash
+# Create venv in Linux filesystem (NTFS doesn't support symlinks)
+python3 -m venv ~/venvs/nova-voice
+
+# Install dependencies
+source ~/venvs/nova-voice/bin/activate
+pip install -r requirements.txt
+```
+
+> **Note:** `pyaudio` requires `python3-dev` and `portaudio19-dev`:
+> ```bash
+> sudo apt-get install -y python3.13-dev portaudio19-dev
+> ```
+
+### 2. Frontend (Node.js)
+
+```bash
+# Install in Linux filesystem (NTFS can't create symlinks for node_modules)
+mkdir -p ~/nova-voice-frontend
+cp -r frontend/* ~/nova-voice-frontend/
+cd ~/nova-voice-frontend
+npm install
+```
+
+### 3. AWS Credentials
+
+```bash
+# Configure SSO (one-time)
+aws configure sso
+
+# Login
+aws sso login --profile default
+
+# Verify
+aws sts get-caller-identity --region us-east-1
+```
+
+---
+
+## 🖥️ Manual Start
+
+### Terminal 1 — Backend
+
+```bash
+cd backend
+source ~/venvs/nova-voice/bin/activate
+export PYTHONPATH=$PYTHONPATH:$(pwd)
+export BYPASS_TOOL_CONSENT=true
+eval $(aws configure export-credentials --format env)
+python -m src.voice_based_aws_agent.main --profile default --region us-east-1 --port 8080 --host 0.0.0.0
+```
+
+### Terminal 2 — Frontend
+
+```bash
+cd ~/nova-voice-frontend
+DISABLE_ESLINT_PLUGIN=true PORT=3001 npx react-scripts start
+```
+
+### Open Browser
+
+Navigate to `http://localhost:3001`. The WebSocket URL field should show `ws://172.29.21.117:8080` (your WSL IP).
+
+---
 
 ## 📁 Project Structure
 
 ```
-aws-strands-nova-voice-assistant/
-├── backend/                           # Backend Python application
+├── backend/
+│   ├── src/voice_based_aws_agent/
+│   │   ├── agents/
+│   │   │   ├── orchestrator.py          # Creates and manages all agents
+│   │   │   ├── supervisor_agent.py      # Routes queries to specialists
+│   │   │   ├── ec2_agent.py             # EC2 operations (Strands Agent + use_aws)
+│   │   │   ├── ssm_agent.py             # SSM operations
+│   │   │   └── backup_agent.py          # AWS Backup operations
+│   │   ├── config/
+│   │   │   ├── config.py                # BedrockModel creation, AgentConfig
+│   │   │   ├── conversation_config.py   # Sliding window conversation managers
+│   │   │   └── tool_config.py           # BYPASS_TOOL_CONSENT setup
+│   │   ├── utils/
+│   │   │   ├── aws_auth.py              # AWS session helper
+│   │   │   ├── prompt_consent.py        # Consent instructions for agents
+│   │   │   └── voice_integration/
+│   │   │       ├── server.py            # WebSocket server (frontend ↔ backend)
+│   │   │       ├── s2s_session_manager.py  # Bedrock stream (backend ↔ Nova Sonic)
+│   │   │       ├── s2s_events.py        # Event format definitions
+│   │   │       └── supervisor_agent_integration.py  # Bridge to Strands agents
+│   │   └── main.py                      # Entry point
+│   └── tools/
+│       └── supervisor_tool.py           # @tool decorator for Nova Sonic tool use
+├── frontend/
 │   ├── src/
-│   │   └── voice_based_aws_agent/
-│   │       ├── agents/                # Multi-agent system
-│   │       │   ├── orchestrator.py    # Central agent coordinator
-│   │       │   ├── supervisor_agent.py # Query routing agent
-│   │       │   ├── ec2_agent.py       # EC2 operations specialist
-│   │       │   ├── ssm_agent.py       # SSM operations specialist
-│   │       │   └── backup_agent.py    # Backup operations specialist
-│   │       ├── config/                # Configuration management
-│   │       ├── utils/
-│   │       │   ├── aws_auth.py        # AWS authentication
-│   │       │   └── voice_integration/ # Nova Sonic integration
-│   │       │       ├── server.py      # WebSocket server
-│   │       │       ├── s2s_session_manager.py # Stream management
-│   │       │       └── supervisor_agent_integration.py # Agent bridge
-│   │       └── main.py                # Application entry point
-│   └── tools/                         # Strands tools
-│       └── supervisor_tool.py         # Supervisor agent tool integration
-├── frontend/                          # React web interface
-│   ├── src/
-│   │   ├── components/                # React components
-│   │   ├── helper/                    # Audio processing utilities
-│   │   ├── App.js                     # Main React application
-│   │   └── VoiceAgent.js              # Voice interface component
-│   └── package.json                   # Node.js dependencies
-├── requirements.txt                   # Python dependencies
-├── run_backend.sh                     # Backend startup script
-├── run_frontend.sh                    # Frontend startup script
-└── README.md                          # This file
+│   │   ├── VoiceAgent.js                # Main React component (mic, WS, playback)
+│   │   ├── helper/
+│   │   │   ├── s2sEvents.js             # Event builders (JS side)
+│   │   │   ├── audioHelper.js           # Base64 ↔ Float32 conversion
+│   │   │   └── audioPlayer.js           # Web Audio API playback
+│   │   └── components/
+│   │       └── EventDisplay.js          # Events panel UI
+│   └── package.json
+├── .kiro/steering.md                    # Project context for Kiro CLI
+├── start.sh                             # One-command launcher
+└── README.md                            # This file
 ```
 
-## 💰 Detailed Cost Breakdown
+---
 
-Running this voice-driven AWS assistant involves several AWS services with usage-based pricing. Here's a comprehensive breakdown for planning and budgeting:
+## 🔌 Key Components
 
-### Amazon Nova Sonic (Speech-to-Speech)
-- **Speech input tokens**: $0.0034 per 1K tokens
-- **Speech output tokens**: $0.0136 per 1K tokens  
-- **Text input tokens**: $0.00006 per 1K tokens
-- **Text output tokens**: $0.00024 per 1K tokens
+### S2sSessionManager (`s2s_session_manager.py`)
 
-### AWS Bedrock Claude 3 Haiku
-- **Input tokens**: $0.00025 per 1K tokens
-- **Output tokens**: $0.00025 per 1K tokens
+Manages the bidirectional stream to Nova Sonic:
+- Opens stream with `AsyncBedrockRuntimeClient` + CRT transport
+- Forwards audio chunks from frontend to Nova Sonic
+- Processes responses (text, audio, tool use) from Nova Sonic
+- Handles tool use → routes to SupervisorAgentIntegration → returns results
 
-### Supporting AWS Services
+### SupervisorAgentIntegration (`supervisor_agent_integration.py`)
 
-**Amazon EC2 (for testing/demo instances)**
-- **t3.micro Linux**: $0.0104 per hour (~$7.49/month if running 24/7)
-- **Most users run instances only during testing**
+Bridge between Nova Sonic tool calls and Strands agents:
+- Receives tool queries from Nova Sonic
+- Routes through AgentOrchestrator → SupervisorAgent → Specialized agents
+- Returns text results (max 800 chars for voice)
 
-**AWS Systems Manager**
-- **Basic operations**: Free tier available
-- **Advanced parameters**: $0.05 per parameter per month
-- **Data transfer**: $0.90 per GB (rarely needed for typical usage)
+### WebSocket Server (`server.py`)
 
-**AWS Backup**
-- **Storage**: ~$0.05 per GB per month (standard warm storage)
-- **Cross-region data transfer**: $0.02 per GB
-- **Restore operations**: $0.02 per GB
+Relays events between frontend and Nova Sonic:
+- Frontend → Backend: session setup events + audio chunks
+- Backend → Frontend: text output + audio output + usage events
 
-### Usage-Based Cost Examples
+---
 
-**Light Development Usage** (2-3 hours/day, 5 days/week)
-- **Voice interactions**: ~50 conversations/week
-- **Average conversation**: 4-6 exchanges
-- **Estimated monthly cost**: $8-15
+## 🎯 Supported Voice Commands
 
-**Moderate Testing** (Daily usage, multiple team members)
-- **Voice interactions**: ~200 conversations/week
-- **Extended conversations**: 8-10 exchanges each
-- **Estimated monthly cost**: $25-45
+| Domain | Example Commands |
+|---|---|
+| **EC2** | "List all EC2 instances", "Start instance i-abc123", "What instances are stopped?" |
+| **SSM** | "Run a command on my instance", "Check patch compliance" |
+| **Backup** | "List backup jobs", "What's in my backup vault?" |
 
-**Heavy Development** (Continuous testing, multiple environments)
-- **Voice interactions**: ~500+ conversations/week
-- **Complex operations**: Long-running AWS tasks
-- **Estimated monthly cost**: $60-100+
+---
 
-### Cost Optimization Features
+## 🐛 Troubleshooting
 
-The solution includes several built-in cost controls:
-- **Voice response truncation**: Limited to 800 characters to reduce token usage
-- **Efficient agent routing**: Minimizes unnecessary LLM calls
-- **Conversation management**: Sliding window to control context size
-- **Free tier utilization**: Leverages AWS free tier services where available
-
-### Cost Factors That Impact Pricing
-
-1. **Conversation Length**: Longer conversations consume more tokens
-2. **Voice vs Text**: Voice processing costs more than text-only interactions
-3. **AWS Operations**: Complex operations requiring multiple API calls
-4. **Instance Usage**: EC2 instances for testing (can be stopped when not needed)
-5. **Backup Storage**: Depends on data volume being backed up
-
-### Production Considerations
-
-For production deployments, additional costs may include:
-- **Load balancing**: Application Load Balancer (~$16/month)
-- **High availability**: Multi-AZ deployments
-- **Monitoring**: CloudWatch logs and metrics
-- **Security**: WAF, additional IAM roles
-- **Scaling**: Auto Scaling groups and larger instance types
-
-**Important Notes:**
-- Pricing shown is for US East (N. Virginia) region as of August 2025
-- Actual costs depend heavily on usage patterns and conversation frequency
-- The voice-optimized design helps keep token usage predictable
-- Consider using AWS Cost Explorer and budgets for monitoring
-
-## 🛠️ Prerequisites
-
-- **Python 3.12+** with pip
-- **Node.js 16+** and npm
-- **AWS Account** with access to:
-  - AWS Bedrock (Claude 3 Haiku model)
-  - Amazon Nova Sonic
-  - EC2, SSM, and AWS Backup services
-- **AWS CLI** configured with appropriate credentials
-- **Audio hardware** (microphone and speakers for voice mode)
-
-## 📦 Installation & Implementation Guide
-
-### Step 1: Backend Setup
-
-**Clone and prepare the environment:**
+### "ExpiredTokenException" in backend logs
 ```bash
-# Clone the repository
-git clone https://github.com/aws-samples/sample-aws-strands-nova-voice-assistant.git
-cd sample-aws-strands-nova-voice-assistant
-
-# Create and activate virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Unix/macOS
-# or
-.venv\Scripts\activate  # On Windows
-
-# Install Python dependencies
-pip install -r requirements.txt
+# Re-authenticate
+rm -rf ~/.aws/sso/cache/*
+aws sso login --profile default
+eval $(aws configure export-credentials --format env)
+# Restart backend
 ```
 
-### Step 2: Configure AWS Service Authentication
+### No audio input detected (Events panel shows no audioInput)
+- Check Chrome mic permissions: `chrome://settings/content/microphone`
+- Must access via `http://localhost:3001` (not an IP address) for mic access
+- Or add the IP to Chrome's secure origins: `chrome://flags/#unsafely-treat-insecure-origin-as-secure`
 
-This application uses two different AWS authentication mechanisms:
+### WebSocket connection failed
+- Backend must bind to `0.0.0.0` (not `localhost`) for WSL→Windows access
+- Use `--host 0.0.0.0` flag
+- WebSocket URL in frontend must use WSL IP (not `localhost` for port 8080)
 
-**Nova Sonic Integration**: Requires AWS credentials as environment variables
-**Other AWS Services**: Uses boto3 with AWS profiles
+### "Role is required" error from Nova Sonic
+- The `contentStart` event for audio must include `"role": "USER"`
+- Already fixed in this fork
 
-**Set up AWS credentials for Nova Sonic (required as environment variables):**
-```bash
-export AWS_ACCESS_KEY_ID=<your-access-key-id>
-export AWS_SECRET_ACCESS_KEY=<your-secret-access-key>
-export AWS_SESSION_TOKEN=<your-session-token>  # Only if using temporary credentials
-export AWS_DEFAULT_REGION=<your-region>
-```
+### CRT InvalidStateError on End Conversation
+- Cosmetic error from `awscrt` library when stream closes
+- Does not affect functionality — ignore it
 
-**Configure AWS CLI profile for other services:**
-```bash
-aws configure --profile <your-profile-name>
-# Enter your AWS Access Key ID, Secret Access Key, and default region
-```
+### Frontend build fails (ESLint)
+- Use `DISABLE_ESLINT_PLUGIN=true` when starting
+- Already removed `react-app/jest` from eslintConfig
 
-**Apply the required IAM permissions to your AWS user/role:**
-- Amazon Bedrock model invocation
-- EC2 instance management  
-- SSM operations
-- AWS Backup functionality
-- Supporting services (KMS, STS)
+### npm install fails (symlinks)
+- Must install in Linux filesystem, not NTFS (`~/nova-voice-frontend/`)
+- WSL2 NTFS mounts don't support symlinks
 
-**Test your configuration:**
-```bash
-# Test AWS CLI access
-aws sts get-caller-identity --profile <your-profile-name>
+---
 
-# Test environment variables
-echo $AWS_ACCESS_KEY_ID
-```
+## 💰 Cost Estimate
 
-**Security Note**: Follow the principle of least privilege - grant only permissions needed for your specific use case. Customize the provided IAM policy based on which AWS services you plan to use with the voice assistant.
+| Usage Level | Conversations/week | Monthly Cost |
+|---|---|---|
+| Light (dev/testing) | ~50 | $8-15 |
+| Moderate | ~200 | $25-45 |
+| Heavy | ~500+ | $60-100+ |
 
-AWS Permissions Example:
-```json
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Sid": "BedrockPermissions",
-            "Effect": "Allow",
-            "Action": [
-                "bedrock:InvokeModel",
-                "bedrock:InvokeModelWithResponseStream",
-                "bedrock:GetFoundationModel",
-                "bedrock:ListFoundationModels"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "EC2ReadPermissions",
-            "Effect": "Allow",
-            "Action": [
-                "ec2:DescribeInstances",
-                "ec2:DescribeSecurityGroups",
-                "ec2:DescribeImages",
-                "ec2:DescribeVpcs",
-                "ec2:DescribeInstanceStatus"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "EC2WritePermissions",
-            "Effect": "Allow",
-            "Action": [
-                "ec2:StartInstances",
-                "ec2:StopInstances",
-                "ec2:RebootInstances"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "SSMReadPermissions",
-            "Effect": "Allow",
-            "Action": [
-                "ssm:DescribeInstanceInformation",
-                "ssm:GetCommandInvocation",
-                "ssm:ListCommands",
-                "ssm:ListCommandInvocations",
-                "ssm:DescribeDocument",
-                "ssm:ListDocuments"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "SSMWritePermissions",
-            "Effect": "Allow",
-            "Action": [
-                "ssm:SendCommand",
-                "ssm:StartSession",
-                "ssm:CreateDocument"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "BackupReadPermissions",
-            "Effect": "Allow",
-            "Action": [
-                "backup:ListBackupJobs",
-                "backup:DescribeBackupVault",
-                "backup:ListBackupPlans",
-                "backup:ListBackupVaults",
-                "backup:DescribeBackupJob"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "BackupWritePermissions",
-            "Effect": "Allow",
-            "Action": [
-                "backup:CreateBackupVault",
-                "backup:CreateBackupPlan",
-                "backup:StartBackupJob",
-                "backup:StartRestoreJob"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "BackupStoragePermissions",
-            "Effect": "Allow",
-            "Action": [
-                "backup-storage:StartObject",
-                "backup-storage:PutObject",
-                "backup-storage:ListObjects"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "SupportingPermissions",
-            "Effect": "Allow",
-            "Action": [
-                "kms:DescribeKey",
-                "sts:GetCallerIdentity"
-            ],
-            "Resource": "*"
-        }
-    ]
-}
-```
+Costs are primarily Nova Sonic tokens (speech I/O) + Claude 3 Haiku (agent reasoning).
 
-### Step 3: Frontend Setup
+---
 
-```bash
-# Navigate to frontend directory
-cd frontend
+## 🔄 Fixes Applied (vs original aws-samples)
 
-# Install Node.js dependencies
-npm install
-```
+1. **SDK v0.11.0 migration**: `BedrockRuntimeClient` → `AsyncBedrockRuntimeClient`, `Config` → `await AsyncBedrockRuntimeConfig.resolve()`, added `AWSCRTHTTPClient` transport for duplex streaming
+2. **ESLint**: Removed `react-app/jest` (incompatible with newer eslint-plugin-jest)
+3. **crypto.randomUUID**: Added fallback for non-secure HTTP contexts
+4. **WebSocket host**: Backend binds `0.0.0.0` for WSL-to-Windows access
+5. **WebSocket URL**: Frontend defaults to WSL IP instead of localhost
+6. **Stream close**: Suppressed cosmetic CRT InvalidStateError
 
-### Step 4: Launch the Application
+---
 
-**Start the backend server:**
-```bash
-# From the project root (recommended)
-./run_backend.sh
+## 📝 Next Steps
 
-# Or with custom parameters:
-./run_backend.sh --profile <your-profile> --region <your-region> --voice matthew
-```
+- [ ] Replace EC2/SSM/Backup agents with custom MCP-connected agents
+- [ ] Connect to Notion, GitHub, Memory via Strands tools
+- [ ] Test French/Arabic voice support
+- [ ] Evaluate latency for real-time conversation
+- [ ] Add conversation persistence
 
-**Start the frontend in a new terminal:**
-```bash
-# Development mode (recommended)
-./run_frontend.sh
-
-# Or manually:
-cd frontend
-npm start
-```
-
-### Step 5: Configure Voice Settings (Optional)
-
-The system supports multiple voice options for text-to-speech:
-```bash
-# Use different voice options
-./run_backend.sh --voice matthew  # Default male voice
-./run_backend.sh --voice tiffany  # Female voice option
-./run_backend.sh --voice amy      # Alternative female voice
-```
-
-### Using the Application
-
-1. **Start the backend server** as described above
-2. **Start the React frontend** in development mode
-3. **Open your browser** to http://localhost:3000
-4. **Configure WebSocket URL** if needed (default: ws://localhost:8080)
-5. **Click "Start Conversation"** to begin voice interaction
-6. **Grant microphone permissions** when prompted
-
-### Important Notes
-
-- **Default port changed**: The default backend port is now 8080 (changed from 80 to avoid requiring administrator privileges). If you need to use a different port:
-  ```bash
-  # Use a custom port
-  ./run_backend.sh --port 3001
-  ```
-  Then update the WebSocket URL in the frontend to match your chosen port
-
-- **AWS Profile**: Make sure your AWS profile has the necessary permissions for Bedrock and other AWS services
-
-## 🎯 Supported Operations
-
-### EC2 Agent
-- List and describe EC2 instances
-- Start, stop, and reboot instances
-- Instance status monitoring
-- Security group and VPC information
-
-### SSM Agent
-- Execute commands on instances
-- Patch management operations
-- Parameter Store interactions
-- Session Manager connections
-
-### Backup Agent
-- List backup jobs and vaults
-- Configure backup plans
-- Monitor backup status
-- Restore operations
-
-## Cleanup
-To avoid ongoing charges, clean up your resources when you're done testing:
-- Terminate any test instances created during the demo
-- Remove the custom IAM roles and policies created for this solution
-- Remove any backup plans or vaults created while testing
-- Delete any snapshots or AMI’s created during the tests
-
-## 🛠️ Troubleshooting
-
-If you encounter issues during setup or operation, these common solutions can help resolve most problems:
-
-### Audio Configuration
-- Ensure microphone permissions are granted in the browser
-- Try using Firefox for better Web Audio API compatibility
-- Verify system audio settings are configured correctly
-
-### WebSocket Connection Issues
-- Verify the backend server is running on the correct port
-- Check firewall settings for WebSocket traffic
-- Ensure the frontend WebSocket URL matches the backend configuration
-
-### AWS Service Permissions
-- Verify IAM policies include necessary service permissions
-- Check AWS CLI configuration and credentials
-- Ensure the AWS profile has access to required regions
-
-## 🔧 Development Notes
-
-### Architecture Design
-- **Simple session management** without complex recovery mechanisms
-- **Basic WebSocket server** without automatic reconnection loops
-- **Straightforward tool processing** with the supervisor agent
-- **Clean error handling** that asks users to restart rather than automatic recovery
-
-### Key Design Decisions
-- **Single Tool**: Uses one `supervisorAgent` tool that routes to specialized agents
-- **Voice Optimization**: Responses truncated to 800 characters for better voice experience
-- **User-Controlled Recovery**: When errors occur, users manually restart conversations
+---
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## 📞 Support
-
-For issues and questions:
-- Check the troubleshooting section above
-- Review AWS service documentation
-- Ensure all prerequisites are met
-- Verify AWS permissions and credentials
-
-
-## Security
-
-See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
-
-## License
-
-This library is licensed under the MIT-0 License. See the LICENSE file.
+MIT-0 (inherited from aws-samples)

@@ -1,0 +1,172 @@
+# Nova Voice Assistant — Process Flow
+
+direction: right
+
+title: {
+  label: Nova Voice Assistant — Speech-to-Speech Process Flow
+  near: top-center
+  shape: text
+  style: {
+    font-size: 20
+    bold: true
+  }
+}
+
+# === ACTORS ===
+
+user: {
+  label: "👤 User"
+  shape: person
+  style: {
+    fill: "#E8F4FD"
+  }
+}
+
+# === FRONTEND ===
+
+frontend: {
+  label: "React Frontend"
+  style: {
+    fill: "#FFF3E0"
+    stroke: "#E65100"
+  }
+
+  mic: "🎤 Microphone Capture\n(Web Audio API, 16kHz PCM16)"
+  encode: "Base64 Encode\n(Int16 → Base64)"
+  ws_send: "WebSocket Send\n(audioInput events)"
+  ws_recv: "WebSocket Receive\n(audioOutput events)"
+  decode: "Base64 Decode\n(Base64 → Float32)"
+  speaker: "🔊 Audio Playback\n(Web Audio API, 24kHz)"
+
+  mic -> encode -> ws_send
+  ws_recv -> decode -> speaker
+}
+
+# === BACKEND ===
+
+backend: {
+  label: "Python Backend (WSL)"
+  style: {
+    fill: "#E8F5E9"
+    stroke: "#2E7D32"
+  }
+
+  ws_server: "WebSocket Server\n(websockets, port 8080)"
+  session_mgr: "S2sSessionManager\n(bidirectional stream)"
+  tool_handler: "Tool Use Handler\n(processToolUse)"
+  agent_bridge: "SupervisorAgent\nIntegration"
+
+  ws_server -> session_mgr: "forward events"
+  session_mgr -> tool_handler: "toolUse detected"
+  tool_handler -> agent_bridge: "route query"
+}
+
+# === NOVA SONIC ===
+
+nova_sonic: {
+  label: "Amazon Nova Sonic\n(Bedrock us-east-1)"
+  shape: cloud
+  style: {
+    fill: "#E0F2F1"
+    stroke: "#00695C"
+  }
+}
+
+# === STRANDS AGENTS ===
+
+agents: {
+  label: "Strands Multi-Agent System"
+  style: {
+    fill: "#F3E5F5"
+    stroke: "#6A1B9A"
+  }
+
+  orchestrator: "AgentOrchestrator\n(creates & manages agents)"
+  supervisor: "SupervisorAgent\n(keyword-based router)"
+  ec2: "EC2Agent\n(Claude 3 Haiku + use_aws)"
+  ssm: "SSMAgent\n(Claude 3 Haiku + use_aws)"
+  backup: "BackupAgent\n(Claude 3 Haiku + use_aws)"
+
+  orchestrator -> supervisor: "routes"
+  supervisor -> ec2: "EC2 queries"
+  supervisor -> ssm: "SSM queries"
+  supervisor -> backup: "Backup queries"
+}
+
+# === AWS SERVICES ===
+
+aws: {
+  label: "AWS Services"
+  style: {
+    fill: "#FFF8E1"
+    stroke: "#F57F17"
+  }
+
+  ec2_svc: "Amazon EC2"
+  ssm_svc: "AWS Systems Manager"
+  backup_svc: "AWS Backup"
+}
+
+# === CONNECTIONS (Main Flow) ===
+
+user -> frontend.mic: "1. Speaks" {
+  style.stroke: "#1565C0"
+  style.font-size: 12
+}
+
+frontend.ws_send -> backend.ws_server: "2. Audio chunks\n(ws://WSL-IP:8080)" {
+  style.stroke: "#1565C0"
+}
+
+backend.session_mgr -> nova_sonic: "3. Bedrock bidirectional\nstream (CRT transport)" {
+  style.stroke: "#1565C0"
+}
+
+nova_sonic -> backend.session_mgr: "4. toolUse / audioOutput\nevents" {
+  style.stroke: "#00695C"
+  style.stroke-dash: 4
+}
+
+backend.agent_bridge -> agents.orchestrator: "5. process_query()" {
+  style.stroke: "#6A1B9A"
+}
+
+agents.ec2 -> aws.ec2_svc: "boto3 API" {
+  style.stroke: "#F57F17"
+  style.stroke-dash: 3
+}
+agents.ssm -> aws.ssm_svc: "boto3 API" {
+  style.stroke: "#F57F17"
+  style.stroke-dash: 3
+}
+agents.backup -> aws.backup_svc: "boto3 API" {
+  style.stroke: "#F57F17"
+  style.stroke-dash: 3
+}
+
+# === RESPONSE PATH ===
+
+agents.orchestrator -> backend.tool_handler: "6. Tool result (text)" {
+  style.stroke: "#00695C"
+  style.stroke-dash: 4
+}
+
+backend.session_mgr -> nova_sonic: "7. toolResult event" {
+  style.stroke: "#00695C"
+  style.stroke-dash: 4
+}
+
+nova_sonic -> backend.ws_server: "8. audioOutput\n(24kHz PCM16 base64)" {
+  style.stroke: "#00695C"
+  style.stroke-dash: 4
+}
+
+backend.ws_server -> frontend.ws_recv: "9. Forward audio" {
+  style.stroke: "#00695C"
+  style.stroke-dash: 4
+}
+
+frontend.speaker -> user: "10. Hears response" {
+  style.stroke: "#00695C"
+  style.stroke-dash: 4
+}
