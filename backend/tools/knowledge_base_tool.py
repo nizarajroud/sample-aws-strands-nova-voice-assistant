@@ -1,6 +1,6 @@
 """
 Knowledge Base Tool for Voice Agent Integration.
-Uses retrieve_and_generate for lower latency (skips the agent layer).
+Uses retrieve_and_generate for low latency with pre-warmed boto3 client.
 """
 
 import boto3
@@ -14,6 +14,19 @@ KNOWLEDGE_BASE_ID = "9DPWLUDY7J"
 MODEL_ARN = "arn:aws:bedrock:ca-central-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"
 REGION = "ca-central-1"
 PROFILE = "csna-operations-sso-828"
+
+# Pre-warm the boto3 client (avoids ~500ms cold start on each call)
+_client = None
+
+
+def _get_client():
+    """Get or create the pre-warmed bedrock-agent-runtime client."""
+    global _client
+    if _client is None:
+        session = boto3.Session(profile_name=PROFILE, region_name=REGION)
+        _client = session.client("bedrock-agent-runtime")
+        logger.info("boto3 bedrock-agent-runtime client pre-warmed")
+    return _client
 
 
 @tool(name="queryKnowledgeBase")
@@ -31,8 +44,7 @@ def query_knowledge_base(question: str) -> str:
     try:
         logger.info(f"Querying knowledge base (direct): {question[:100]}...")
 
-        session = boto3.Session(profile_name=PROFILE, region_name=REGION)
-        client = session.client("bedrock-agent-runtime")
+        client = _get_client()
 
         response = client.retrieve_and_generate(
             input={"text": question},

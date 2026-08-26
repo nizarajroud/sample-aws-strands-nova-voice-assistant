@@ -5,7 +5,11 @@ class S2sEvent {
     temperature: 0.7
   };
 
-  static DEFAULT_SYSTEM_PROMPT = "You are a helpful voice assistant connected to a personal knowledge base. Answer the user's questions by searching the knowledge base using the supervisorAgent tool. You can answer questions about projects, notes, documentation, and any personal or professional information stored in the knowledge base. Keep responses concise and conversational — optimized for voice. Respond in the same language the user speaks to you.";
+  static DEFAULT_TURN_DETECTION_CONFIG = {
+    endpointingSensitivity: "HIGH"  // HIGH=1.5s, MEDIUM=1.75s, LOW=2s
+  };
+
+  static DEFAULT_SYSTEM_PROMPT = "You are a helpful voice assistant connected to a personal knowledge base. Answer the user's questions by searching the knowledge base using the supervisorAgent tool. You can answer questions about projects, notes, documentation, and any personal or professional information stored in the knowledge base. Keep responses concise and conversational — optimized for voice. Respond in the same language the user speaks to you. When you need to use a tool, say a brief filler like 'Let me check that for you' before waiting for the result.";
 
   static DEFAULT_AUDIO_INPUT_CONFIG = {
     mediaType: "audio/lpcm",
@@ -27,7 +31,10 @@ class S2sEvent {
   };
 
   static sessionStart(inferenceConfig = S2sEvent.DEFAULT_INFER_CONFIG) {
-    return { event: { sessionStart: { inferenceConfiguration: inferenceConfig } } };
+    return { event: { sessionStart: { 
+      inferenceConfiguration: inferenceConfig,
+      turnDetectionConfiguration: S2sEvent.DEFAULT_TURN_DETECTION_CONFIG
+    } } };
   }
 
   static promptStart(promptName, audioOutputConfig = S2sEvent.DEFAULT_AUDIO_OUTPUT_CONFIG, toolConfig = null) {
