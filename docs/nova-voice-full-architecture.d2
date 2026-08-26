@@ -1,0 +1,180 @@
+# Nova Voice Assistant — Full Architecture with Regions
+
+direction: right
+
+title: {
+  label: "Nova Voice Assistant — Architecture & Data Flow"
+  near: top-center
+  shape: text
+  style: {
+    font-size: 20
+    bold: true
+  }
+}
+
+# === LOCAL (Windows + WSL) ===
+
+local: {
+  label: "🖥️ Local Machine (Windows + WSL2)"
+  style: {
+    fill: "#E3F2FD"
+    stroke: "#1565C0"
+    border-radius: 8
+  }
+
+  browser: {
+    label: "Chrome (Windows)"
+    style: {
+      fill: "#FFF3E0"
+      stroke: "#E65100"
+    }
+
+    mic: "🎤 Microphone\n(16kHz PCM16)"
+    react: "React Frontend\n(localhost:3001)"
+    speaker: "🔊 Speakers\n(24kHz playback)"
+
+    mic -> react: "Web Audio API"
+    react -> speaker: "AudioWorklet"
+  }
+
+  wsl: {
+    label: "WSL2 (Ubuntu)"
+    style: {
+      fill: "#E8F5E9"
+      stroke: "#2E7D32"
+    }
+
+    backend: "Python Backend\n(0.0.0.0:8080)\nS2sSessionManager"
+  }
+
+  browser.react -> wsl.backend: "WebSocket\nws://172.29.21.117:8080" {
+    style.stroke: "#1565C0"
+    style.font-size: 11
+  }
+  wsl.backend -> browser.react: "audioOutput events\n(base64 PCM)" {
+    style.stroke: "#00695C"
+    style.stroke-dash: 4
+    style.font-size: 11
+  }
+}
+
+# === AWS us-east-1 ===
+
+us_east_1: {
+  label: "☁️ AWS — us-east-1 (N. Virginia)"
+  style: {
+    fill: "#FFF8E1"
+    stroke: "#F57F17"
+    border-radius: 8
+  }
+
+  nova_sonic: {
+    label: "Amazon Nova Sonic\n(Bedrock)"
+    shape: cloud
+    style: {
+      fill: "#E0F2F1"
+      stroke: "#00695C"
+      font-size: 13
+      bold: true
+    }
+  }
+
+  sonic_detail: {
+    label: "Speech-to-Text\n+ LLM Reasoning\n+ Text-to-Speech\n(single model)"
+    style: {
+      fill: "#E0F2F1"
+      stroke: "#00695C"
+      font-size: 11
+    }
+  }
+
+  nova_sonic -> sonic_detail: "" {
+    style.stroke-dash: 2
+    style.stroke: "#999"
+  }
+}
+
+# === AWS ca-central-1 ===
+
+ca_central_1: {
+  label: "☁️ AWS — ca-central-1 (Canada)"
+  style: {
+    fill: "#F3E5F5"
+    stroke: "#6A1B9A"
+    border-radius: 8
+  }
+
+  kb: {
+    label: "Bedrock Knowledge Base\n(9DPWLUDY7J)"
+    style: {
+      fill: "#EDE7F6"
+      stroke: "#4A148C"
+      font-size: 12
+      bold: true
+    }
+  }
+
+  s3: {
+    label: "S3 Bucket\n(ctx2-kb-026991214828)"
+    style: {
+      fill: "#E8F5E9"
+      stroke: "#2E7D32"
+    }
+  }
+
+  claude: {
+    label: "Claude 3 Haiku\n(generation)"
+    style: {
+      fill: "#E0F2F1"
+      stroke: "#00695C"
+    }
+  }
+
+  kb -> s3: "vector search" {
+    style.stroke: "#6A1B9A"
+    style.font-size: 10
+  }
+  kb -> claude: "generate answer" {
+    style.stroke: "#6A1B9A"
+    style.font-size: 10
+  }
+}
+
+# === MAIN FLOW CONNECTIONS ===
+
+local.wsl.backend -> us_east_1.nova_sonic: "① Audio stream\n(Bedrock bidirectional\nCRT transport)" {
+  style.stroke: "#1565C0"
+  style.stroke-width: 3
+  style.font-size: 11
+}
+
+us_east_1.nova_sonic -> local.wsl.backend: "② toolUse event\n(Nova Sonic wants data)" {
+  style.stroke: "#E65100"
+  style.stroke-width: 2
+  style.font-size: 11
+}
+
+local.wsl.backend -> ca_central_1.kb: "③ retrieve_and_generate\n(boto3, cross-region)" {
+  style.stroke: "#6A1B9A"
+  style.stroke-width: 2
+  style.font-size: 11
+}
+
+ca_central_1.kb -> local.wsl.backend: "④ Text answer\n(~3-4s latency)" {
+  style.stroke: "#6A1B9A"
+  style.stroke-dash: 4
+  style.font-size: 11
+}
+
+local.wsl.backend -> us_east_1.nova_sonic: "⑤ toolResult event\n(KB answer text)" {
+  style.stroke: "#00695C"
+  style.stroke-width: 2
+  style.font-size: 11
+}
+
+us_east_1.nova_sonic -> local.wsl.backend: "⑥ audioOutput\n(speech response)" {
+  style.stroke: "#00695C"
+  style.stroke-dash: 4
+  style.stroke-width: 3
+  style.font-size: 11
+}
