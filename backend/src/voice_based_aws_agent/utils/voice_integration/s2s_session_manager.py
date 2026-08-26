@@ -5,11 +5,10 @@ import warnings
 import uuid
 from .s2s_events import S2sEvent
 import time
-from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient, InvokeModelWithBidirectionalStreamOperationInput
+from aws_sdk_bedrock_runtime.config import AsyncBedrockRuntimeConfig
+from aws_sdk_bedrock_runtime.client import AsyncBedrockRuntimeClient, InvokeModelWithBidirectionalStreamOperationInput
 from aws_sdk_bedrock_runtime.models import InvokeModelWithBidirectionalStreamInputChunk, BidirectionalInputPayloadPart
-from aws_sdk_bedrock_runtime.config import Config, HTTPAuthSchemeResolver, SigV4AuthScheme
-from smithy_aws_core.identity.environment import EnvironmentCredentialsResolver
-from smithy_core.shapes import ShapeID
+from smithy_http.aio.crt import AWSCRTHTTPClient
 from .supervisor_agent_integration import SupervisorAgentIntegration
 
 # Suppress warnings
@@ -51,22 +50,15 @@ class S2sSessionManager:
         # Initialize the Supervisor Agent integration
         self.supervisor_agent = SupervisorAgentIntegration(config)
 
-    def _initialize_client(self):
-        """Initialize the Bedrock client."""
-        config = Config(
-            endpoint_uri=f"https://bedrock-runtime.{self.region}.amazonaws.com",
-            region=self.region,
-            aws_credentials_identity_resolver=EnvironmentCredentialsResolver(),
-            auth_scheme_resolver=HTTPAuthSchemeResolver(),
-            auth_schemes={ShapeID("aws.auth#sigv4"): SigV4AuthScheme(service="bedrock")}
-        )
-        self.bedrock_client = BedrockRuntimeClient(config=config)
-
     async def initialize_stream(self):
-        """Initialize the bidirectional stream with Bedrock."""
+        """Initialize the bidirectional stream with Bedrock using async config resolution."""
         try:
-            if not self.bedrock_client:
-                self._initialize_client()
+            # Use AsyncBedrockRuntimeConfig.resolve() with CRT transport for duplex streaming
+            config = await AsyncBedrockRuntimeConfig.resolve(
+                region=self.region,
+                transport=AWSCRTHTTPClient()
+            )
+            self.bedrock_client = AsyncBedrockRuntimeClient(config=config)
         except Exception as ex:
             self.is_active = False
             print(f"Failed to initialize Bedrock client: {str(ex)}")

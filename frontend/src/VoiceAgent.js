@@ -43,7 +43,7 @@ class VoiceAgent extends React.Component {
             configSystemPrompt: S2sEvent.DEFAULT_SYSTEM_PROMPT,
             configAudioOutput: S2sEvent.DEFAULT_AUDIO_OUTPUT_CONFIG,
             configVoiceIdOption: { label: "Matthew (en-US)", value: "matthew" },
-            websocketUrl: "ws://localhost:8080"
+            websocketUrl: "ws://172.29.21.117:8080"
         };
         
         // Audio processing limits for security
@@ -297,9 +297,16 @@ class VoiceAgent extends React.Component {
     connectWebSocket() {
         // Connect to the S2S WebSocket server
         if (this.socket === null || this.socket.readyState !== WebSocket.OPEN) {
-            const promptName = crypto.randomUUID();
-            const textContentName = crypto.randomUUID();
-            const audioContentName = crypto.randomUUID();
+            const generateUUID = () => 
+                (typeof crypto !== 'undefined' && crypto.randomUUID) 
+                    ? crypto.randomUUID() 
+                    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+                        const r = Math.random() * 16 | 0;
+                        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+                    });
+            const promptName = generateUUID();
+            const textContentName = generateUUID();
+            const audioContentName = generateUUID();
             this.setState({
                 promptName: promptName,
                 textContentName: textContentName,
