@@ -580,7 +580,14 @@ class VoiceAgent extends React.Component {
         const voiceOptions = [
             { label: "Matthew (en-US)", value: "matthew" },
             { label: "Tiffany (en-US)", value: "tiffany" },
-            { label: "Amy (en-GB)", value: "amy" }
+            { label: "Amy (en-GB)", value: "amy" },
+            { label: "Léa (fr-FR)", value: "lea" },
+            { label: "Rémi (fr-FR)", value: "remi" },
+            { label: "Liam (fr-CA)", value: "liam" },
+            { label: "Pedro (es-US)", value: "pedro" },
+            { label: "Mia (es-US)", value: "mia" },
+            { label: "Hala (ar)", value: "hala" },
+            { label: "Zayd (ar)", value: "zayd" }
         ];
 
         return (
