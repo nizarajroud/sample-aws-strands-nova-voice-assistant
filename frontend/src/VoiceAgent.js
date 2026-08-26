@@ -581,13 +581,14 @@ class VoiceAgent extends React.Component {
             { label: "Matthew (en-US)", value: "matthew" },
             { label: "Tiffany (en-US)", value: "tiffany" },
             { label: "Amy (en-GB)", value: "amy" },
-            { label: "Léa (fr-FR)", value: "lea" },
-            { label: "Rémi (fr-FR)", value: "remi" },
-            { label: "Liam (fr-CA)", value: "liam" },
-            { label: "Pedro (es-US)", value: "pedro" },
-            { label: "Mia (es-US)", value: "mia" },
-            { label: "Hala (ar)", value: "hala" },
-            { label: "Zayd (ar)", value: "zayd" }
+            { label: "Ambre (fr-FR)", value: "ambre" },
+            { label: "Florian (fr-FR)", value: "florian" },
+            { label: "Lupe (es-US)", value: "lupe" },
+            { label: "Carlos (es-US)", value: "carlos" },
+            { label: "Greta (de-DE)", value: "greta" },
+            { label: "Lennart (de-DE)", value: "lennart" },
+            { label: "Beatrice (it-IT)", value: "beatrice" },
+            { label: "Lorenzo (it-IT)", value: "lorenzo" }
         ];
 
         return (
