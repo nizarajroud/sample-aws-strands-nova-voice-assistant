@@ -1,6 +1,6 @@
 """
 Knowledge Base Tool for Voice Agent Integration.
-Queries a Bedrock Agent connected to a knowledge base for project-specific Q&A.
+Uses retrieve_and_generate for lower latency (skips the agent layer).
 """
 
 import boto3
@@ -9,9 +9,9 @@ from strands import tool
 
 logger = logging.getLogger("knowledge_base_tool")
 
-# Configuration — ctx2-agent on account 026991214828
-AGENT_ID = "77F0DN0ARA"
-AGENT_ALIAS_ID = "KWNRPUN6JR"  # "live" alias → version 1
+# Configuration
+KNOWLEDGE_BASE_ID = "9DPWLUDY7J"
+MODEL_ARN = "arn:aws:bedrock:ca-central-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"
 REGION = "ca-central-1"
 PROFILE = "csna-operations-sso-828"
 
@@ -19,9 +19,8 @@ PROFILE = "csna-operations-sso-828"
 @tool(name="queryKnowledgeBase")
 def query_knowledge_base(question: str) -> str:
     """
-    Query the personal knowledge base via Bedrock Agent.
-    Use this tool to answer questions about projects, personal notes,
-    documentation, and any information stored in the knowledge base.
+    Query the personal knowledge base directly via Bedrock retrieve_and_generate.
+    Faster than invoke_agent — skips the agent orchestration layer.
 
     Args:
         question: The user's question to search the knowledge base for
@@ -30,24 +29,23 @@ def query_knowledge_base(question: str) -> str:
         str: Answer from the knowledge base
     """
     try:
-        logger.info(f"Querying knowledge base: {question[:100]}...")
+        logger.info(f"Querying knowledge base (direct): {question[:100]}...")
 
-        # Use the specific profile for the account that has the agent
         session = boto3.Session(profile_name=PROFILE, region_name=REGION)
         client = session.client("bedrock-agent-runtime")
 
-        response = client.invoke_agent(
-            agentId=AGENT_ID,
-            agentAliasId=AGENT_ALIAS_ID,
-            sessionId="voice-session",
-            inputText=question,
+        response = client.retrieve_and_generate(
+            input={"text": question},
+            retrieveAndGenerateConfiguration={
+                "type": "KNOWLEDGE_BASE",
+                "knowledgeBaseConfiguration": {
+                    "knowledgeBaseId": KNOWLEDGE_BASE_ID,
+                    "modelArn": MODEL_ARN,
+                },
+            },
         )
 
-        # Read the streaming response
-        result = ""
-        for event in response["completion"]:
-            if "chunk" in event:
-                result += event["chunk"]["bytes"].decode()
+        result = response["output"]["text"]
 
         if not result:
             result = "I couldn't find relevant information in the knowledge base for that question."
@@ -56,7 +54,7 @@ def query_knowledge_base(question: str) -> str:
         if len(result) > 800:
             result = result[:800] + "... (truncated for voice)"
 
-        logger.info(f"Knowledge base result: {result[:100]}...")
+        logger.info(f"Knowledge base result ({len(result)} chars): {result[:80]}...")
         return result
 
     except Exception as e:
