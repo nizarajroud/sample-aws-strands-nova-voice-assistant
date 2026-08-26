@@ -5,7 +5,11 @@ class S2sEvent {
     temperature: 0.7
   };
 
-  static DEFAULT_SYSTEM_PROMPT = "You are a specialized AWS voice assistant. You ONLY help with AWS services and operations. You can assist with EC2 instances, AWS Backup, and SSM operations. If users ask about non-AWS topics, politely redirect them to AWS-related questions. Keep responses concise and focused on AWS services only.";
+  static DEFAULT_TURN_DETECTION_CONFIG = {
+    endpointingSensitivity: "HIGH"
+  };
+
+  static DEFAULT_SYSTEM_PROMPT = "You are a helpful personal voice assistant. You have access to a powerful tool that can search Notion pages, GitHub repos, bookmarks, memory, AWS documentation, and more. Use the supervisorAgent tool to answer any question the user asks. Keep responses concise and conversational — optimized for voice (2-3 sentences max). Respond in the same language the user speaks to you. When you need to use a tool, say a brief filler like 'Let me check that for you' before waiting for the result.";
 
   static DEFAULT_AUDIO_INPUT_CONFIG = {
     mediaType: "audio/lpcm",
@@ -27,7 +31,10 @@ class S2sEvent {
   };
 
   static sessionStart(inferenceConfig = S2sEvent.DEFAULT_INFER_CONFIG) {
-    return { event: { sessionStart: { inferenceConfiguration: inferenceConfig } } };
+    return { event: { sessionStart: { 
+      inferenceConfiguration: inferenceConfig,
+      turnDetectionConfiguration: S2sEvent.DEFAULT_TURN_DETECTION_CONFIG
+    } } };
   }
 
   static promptStart(promptName, audioOutputConfig = S2sEvent.DEFAULT_AUDIO_OUTPUT_CONFIG, toolConfig = null) {

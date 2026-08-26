@@ -47,7 +47,7 @@ async def websocket_handler(websocket, path, config):
                     if stream_manager is None:
                         logger.info("Initializing simple stream manager")
                         stream_manager = S2sSessionManager(
-                            model_id='amazon.nova-sonic-v1:0',
+                            model_id='amazon.nova-2-sonic-v1:0',
                             region='us-east-1',
                             config=config
                         )
