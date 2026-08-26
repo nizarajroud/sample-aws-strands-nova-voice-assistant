@@ -14,6 +14,10 @@ from .supervisor_agent_integration import SupervisorAgentIntegration
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
+# Suppress CRT InvalidStateError on stream close (cosmetic, not a real error)
+import logging
+logging.getLogger("awscrt").setLevel(logging.CRITICAL)
+
 DEBUG = False
 
 def debug_print(message):
@@ -271,9 +275,20 @@ class S2sSessionManager:
             
         self.is_active = False
         
-        if self.stream:
-            # Don't await here to avoid blocking
-            asyncio.create_task(self.stream.input_stream.close())
-        
+        # Cancel response task first to stop reading
         if self.response_task and not self.response_task.done():
             self.response_task.cancel()
+        
+        # Close the stream input gracefully
+        if self.stream:
+            try:
+                asyncio.create_task(self._close_stream())
+            except RuntimeError:
+                pass  # Event loop closed, nothing to do
+
+    async def _close_stream(self):
+        """Gracefully close the Bedrock stream."""
+        try:
+            await self.stream.input_stream.close()
+        except Exception:
+            pass  # Ignore errors during cleanup
