@@ -148,18 +148,10 @@ def _initialize_bridge():
 
     _mcp_clients = create_mcp_clients()
 
-    # Start all MCP clients (context manager enter)
-    active_clients = []
-    for client in _mcp_clients:
-        try:
-            client.__enter__()
-            active_clients.append(client)
-        except Exception as e:
-            logger.error(f"Failed to start MCP client: {e}")
+    logger.info(f"Passing {len(_mcp_clients)} MCP clients to Strands Agent (Strands manages lifecycle)")
 
-    logger.info(f"Started {len(active_clients)} MCP clients")
-
-    # Create the bridge agent with MCP clients as tool providers
+    # Create the bridge agent — pass MCP clients directly as tools
+    # Strands will call .start() on them internally when needed
     import boto3
     session = boto3.Session(region_name="us-east-1")
     model = BedrockModel(
@@ -174,7 +166,7 @@ Answer the user's question using the available tools.
 Be concise — your response will be spoken aloud by a voice assistant.
 Limit responses to 2-3 sentences maximum.
 Respond in the same language as the question.""",
-        tools=active_clients,
+        tools=_mcp_clients,
     )
 
     _initialized = True
