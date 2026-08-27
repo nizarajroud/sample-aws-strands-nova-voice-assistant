@@ -184,6 +184,11 @@ class VoiceAgent extends React.Component {
                     }
                     this.setState({chatMessages: chatMessages});
                 }
+                // Detect barge-in: if stopReason indicates interruption, clear audio
+                if (stopReason === "END_TURN_INTERRUPTED" || stopReason === "INTERRUPTED") {
+                    console.log("Barge-in detected! Clearing audio queue.");
+                    this.cancelAudio();
+                }
                 break;
                 
             case "streamRecovery":
