@@ -1,7 +1,7 @@
 """
 MCP Bridge Tool for Voice Agent Integration.
-Loads MCP servers from kiro-cli agent configs and exposes them as a single
-Strands Agent that Nova Sonic can call via tool use.
+Loads MCP servers from kiro-cli configs (global + agent) and exposes them
+as a single Strands Agent that Nova Sonic can call via tool use.
 """
 
 import json
@@ -15,21 +15,25 @@ from mcp import stdio_client, StdioServerParameters
 
 logger = logging.getLogger("mcp_bridge")
 
-# Path to kiro-cli agent configs
+# Paths to kiro-cli configs
+GLOBAL_MCP_FILE = Path.home() / ".kiro" / "settings" / "mcp.json"
 AGENTS_DIR = Path.home() / ".kiro" / "agents"
 
-# MCP servers to load for voice (subset — fast, info-returning tools only)
-# Exclude: diagram generators, file writers, TTS, video transcribers, etc.
+# MCP servers to load for voice (fast, info-returning tools)
 VOICE_MCPS = [
+    # From global mcp.json
     "notion-workspace",
     "github",
     "agentcore-memory",
+    "bookmarks",
+    "fetch",
+    "time",
+    "firecrawl",
+    # From exp2.json
     "remote.bridge.aws-mcp",
     "context7",
-    "fetch",
-    "bookmarks",
-    "time",
     "ssh-mcp-server",
+    "memory-exp2",
 ]
 
 # The env file that holds secrets
@@ -61,36 +65,42 @@ def _resolve_env_vars(env_dict: dict) -> dict:
     return resolved
 
 
-def _load_mcp_config(agent_name: str = "exp2") -> dict:
-    """Load MCP server configs from a kiro-cli agent JSON file."""
-    agent_file = AGENTS_DIR / f"{agent_name}.json"
-    if not agent_file.exists():
-        logger.error(f"Agent config not found: {agent_file}")
-        return {}
+def _load_all_mcp_configs() -> dict:
+    """Load MCP configs from both global and agent files."""
+    all_mcps = {}
 
-    with open(agent_file) as f:
-        data = json.load(f)
+    # Load global MCPs
+    if GLOBAL_MCP_FILE.exists():
+        with open(GLOBAL_MCP_FILE) as f:
+            data = json.load(f)
+        all_mcps.update(data.get("mcpServers", {}))
+        logger.info(f"Loaded {len(data.get('mcpServers', {}))} MCPs from global config")
 
-    return data.get("mcpServers", {})
+    # Load agent-specific MCPs (exp2)
+    agent_file = AGENTS_DIR / "exp2.json"
+    if agent_file.exists():
+        with open(agent_file) as f:
+            data = json.load(f)
+        all_mcps.update(data.get("mcpServers", {}))
+        logger.info(f"Loaded {len(data.get('mcpServers', {}))} MCPs from exp2 config")
+
+    return all_mcps
 
 
-def create_mcp_clients(agent_name: str = "exp2") -> list:
+def create_mcp_clients() -> list:
     """
     Create MCPClient instances for voice-relevant MCP servers.
 
-    Args:
-        agent_name: Which kiro-cli agent config to read (default: exp2)
-
     Returns:
-        List of MCPClient instances ready to be passed to a Strands Agent
+        List of MCPClient instances ready to be used with Strands Agent
     """
     _load_env_file()
-    all_mcps = _load_mcp_config(agent_name)
+    all_mcps = _load_all_mcp_configs()
     clients = []
 
     for mcp_name in VOICE_MCPS:
         if mcp_name not in all_mcps:
-            logger.warning(f"MCP '{mcp_name}' not found in {agent_name} config, skipping")
+            logger.warning(f"MCP '{mcp_name}' not found in any config, skipping")
             continue
 
         cfg = all_mcps[mcp_name]
@@ -121,24 +131,24 @@ def create_mcp_clients(agent_name: str = "exp2") -> list:
     return clients
 
 
-# Global agent instance (singleton)
+# Global bridge agent (singleton — initialized once, reused across calls)
 _bridge_agent = None
 _mcp_clients = []
+_initialized = False
 
 
-def get_bridge_agent() -> Agent:
-    """Get or create the MCP bridge agent (singleton)."""
-    global _bridge_agent, _mcp_clients
+def _initialize_bridge():
+    """Initialize the MCP Bridge Agent (called once)."""
+    global _bridge_agent, _mcp_clients, _initialized
 
-    if _bridge_agent is not None:
-        return _bridge_agent
+    if _initialized:
+        return
 
     logger.info("Initializing MCP Bridge Agent...")
 
-    # Create MCP clients
-    _mcp_clients = create_mcp_clients("exp2")
+    _mcp_clients = create_mcp_clients()
 
-    # Enter all MCP client contexts
+    # Start all MCP clients (context manager enter)
     active_clients = []
     for client in _mcp_clients:
         try:
@@ -147,19 +157,9 @@ def get_bridge_agent() -> Agent:
         except Exception as e:
             logger.error(f"Failed to start MCP client: {e}")
 
-    # Collect all tools from active MCP clients
-    all_tools = []
-    for client in active_clients:
-        try:
-            tools = client.list_tools_sync()
-            all_tools.extend(tools)
-            logger.info(f"  Loaded {len(tools)} tools from MCP")
-        except Exception as e:
-            logger.error(f"  Failed to list tools: {e}")
+    logger.info(f"Started {len(active_clients)} MCP clients")
 
-    logger.info(f"Total tools available: {len(all_tools)}")
-
-    # Create the bridge agent with all MCP tools
+    # Create the bridge agent with MCP clients as tool providers
     import boto3
     session = boto3.Session(region_name="us-east-1")
     model = BedrockModel(
@@ -177,8 +177,8 @@ Respond in the same language as the question.""",
         tools=active_clients,
     )
 
+    _initialized = True
     logger.info("MCP Bridge Agent initialized successfully")
-    return _bridge_agent
 
 
 async def query_bridge(question: str) -> str:
@@ -192,8 +192,9 @@ async def query_bridge(question: str) -> str:
         Text response from the agent
     """
     try:
-        agent = get_bridge_agent()
-        response = agent(question)
+        _initialize_bridge()
+
+        response = _bridge_agent(question)
 
         # Extract text
         if hasattr(response, "content"):
@@ -216,7 +217,7 @@ async def query_bridge(question: str) -> str:
 
 def shutdown_bridge():
     """Cleanup MCP clients on shutdown."""
-    global _mcp_clients, _bridge_agent
+    global _mcp_clients, _bridge_agent, _initialized
     for client in _mcp_clients:
         try:
             client.__exit__(None, None, None)
@@ -224,4 +225,5 @@ def shutdown_bridge():
             pass
     _mcp_clients = []
     _bridge_agent = None
+    _initialized = False
     logger.info("MCP Bridge shut down")
