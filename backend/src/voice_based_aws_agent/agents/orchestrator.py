@@ -1,16 +1,10 @@
 """
-Agent Orchestrator — Customized for Knowledge Base only.
-Routes all queries to the Bedrock Knowledge Base agent instead of EC2/SSM/Backup.
+Agent Orchestrator — Knowledge Base mode.
+Routes all queries to the Bedrock Knowledge Base via retrieve_and_generate.
 """
 
 import logging
 from typing import Dict, Any
-
-# COMMENTED OUT: Original AWS specialized agents
-# from .supervisor_agent import SupervisorAgent
-# from .ec2_agent import EC2Agent
-# from .ssm_agent import SSMAgent
-# from .backup_agent import BackupAgent
 
 from ..config.tool_config import setup_tool_environment, get_tool_config
 
@@ -19,8 +13,7 @@ logger = logging.getLogger(__name__)
 
 class AgentOrchestrator:
     """
-    Simplified orchestrator that routes all queries to the Knowledge Base.
-    No more EC2/SSM/Backup agents — just direct KB lookup.
+    Orchestrator that routes all queries to the Bedrock Knowledge Base.
     """
 
     def __init__(self, config=None):
@@ -49,11 +42,9 @@ class AgentOrchestrator:
         try:
             logger.info(f"Processing query via Knowledge Base: {query}")
 
-            # Import and call the knowledge base tool directly
             from tools.knowledge_base_tool import query_knowledge_base
             response = query_knowledge_base(question=query)
 
-            # Extract string result
             if hasattr(response, 'content'):
                 result = response.content
             elif isinstance(response, dict):
@@ -72,7 +63,7 @@ class AgentOrchestrator:
         """Get status of the system."""
         return {
             "mode": "knowledge_base",
-            "agent_id": "4EBXLZQW3Q",
+            "knowledge_base_id": "9DPWLUDY7J",
             "region": "ca-central-1",
             "tool_config": get_tool_config(),
         }
