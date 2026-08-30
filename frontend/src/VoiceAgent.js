@@ -336,7 +336,7 @@ class VoiceAgent extends React.Component {
                         {
                             "toolSpec": {
                                 "name": "supervisorAgent",
-                                "description": "Searches the personal knowledge base to answer user questions about projects, notes, and documentation",
+                                "description": "Queries the personal assistant with access to Notion, GitHub, bookmarks, memory, AWS docs, time, and web",
                                 "inputSchema": {
                                     "json": JSON.stringify({
                                         "$schema": "http://json-schema.org/draft-07/schema#",

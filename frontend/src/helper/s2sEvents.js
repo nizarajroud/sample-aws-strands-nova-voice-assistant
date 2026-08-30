@@ -9,7 +9,7 @@ class S2sEvent {
     endpointingSensitivity: "HIGH"  // HIGH=1.5s, MEDIUM=1.75s, LOW=2s
   };
 
-  static DEFAULT_SYSTEM_PROMPT = "You are a helpful voice assistant connected to a personal knowledge base. Answer the user's questions by searching the knowledge base using the supervisorAgent tool. You can answer questions about projects, notes, documentation, and any personal or professional information stored in the knowledge base. Keep responses concise and conversational — optimized for voice. Respond in the same language the user speaks to you. When you need to use a tool, say a brief filler like 'Let me check that for you' before waiting for the result.";
+  static DEFAULT_SYSTEM_PROMPT = "You are a helpful personal voice assistant with access to a powerful tool (supervisorAgent) connected to Notion, GitHub, bookmarks, memory, AWS documentation, the current time, and web fetch. Use the supervisorAgent tool when the user asks a question that requires looking up information. For simple greetings or casual conversation, respond directly without the tool. Keep responses concise and conversational — optimized for voice (2-3 sentences max). Respond in the same language the user speaks to you. When you use a tool, say a brief filler like 'Let me check that for you' before waiting.";
 
   static DEFAULT_AUDIO_INPUT_CONFIG = {
     mediaType: "audio/lpcm",

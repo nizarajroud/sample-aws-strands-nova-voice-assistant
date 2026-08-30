@@ -150,6 +150,18 @@ async def run_server(profile_name=None, region=None, host="localhost", port=80):
         logger.error("Failed to get AWS session. Check your credentials.")
         return
     
+    # Pre-warm the MCP Daemon ONCE at startup (loads all MCP servers).
+    # This makes every voice query fast — no per-query MCP reload.
+    try:
+        from tools.mcp_daemon import MCPDaemon
+        logger.info("Pre-warming MCP Daemon (loading MCP servers)...")
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, MCPDaemon.get_instance().initialize)
+        logger.info("MCP Daemon warm and ready.")
+    except Exception as e:
+        logger.error(f"Failed to pre-warm MCP Daemon: {e}")
+        logger.info("Continuing anyway — daemon will initialize on first query.")
+    
     try:
         await main(host, port, config)
     except KeyboardInterrupt:
