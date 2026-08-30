@@ -1,0 +1,130 @@
+# Nova Voice Assistant — Message Journey (main branch)
+# Le voyage d'un message: de la voix de l'utilisateur jusqu'au retour vocal
+
+direction: down
+
+title: |md
+  # Nova Voice Assistant — Le voyage d'un message
+  ## De la voix de l'utilisateur au retour vocal (branche main)
+| {
+  near: top-center
+  shape: text
+  style.font-size: 22
+}
+
+user: {
+  label: "Utilisateur"
+  shape: person
+  style: {
+    fill: "#E3F2FD"
+    stroke: "#1565C0"
+  }
+}
+
+browser: {
+  label: "Navigateur (Chrome / Windows)\nReact Frontend — localhost:3001"
+  shape: rectangle
+  style: {
+    fill: "#FFF3E0"
+    stroke: "#E65100"
+  }
+}
+
+backend: {
+  label: "Backend Python (WSL)\nWebSocket Server + S2sSessionManager\n0.0.0.0:8080"
+  shape: rectangle
+  style: {
+    fill: "#E8F5E9"
+    stroke: "#2E7D32"
+  }
+}
+
+nova: {
+  label: "Amazon Nova 2 Sonic\n(Bedrock — us-east-1)\nSTT + LLM + TTS"
+  shape: cloud
+  style: {
+    fill: "#E0F2F1"
+    stroke: "#00695C"
+  }
+}
+
+kb: {
+  label: "Bedrock Knowledge Base\n(ca-central-1 — 9DPWLUDY7J)\nretrieve_and_generate"
+  shape: cylinder
+  style: {
+    fill: "#F3E5F5"
+    stroke: "#6A1B9A"
+  }
+}
+
+# ---- Flux aller (question) ----
+user -> browser: "1. Parle au micro\n(voix)" {
+  style.stroke: "#1565C0"
+  style.bold: true
+}
+browser -> backend: "2. Audio PCM16 base64\n(WebSocket)" {
+  style.stroke: "#1565C0"
+  style.bold: true
+}
+backend -> nova: "3. Stream bidirectionnel\n(audioInput)" {
+  style.stroke: "#1565C0"
+  style.bold: true
+}
+
+# ---- Tool use (si besoin d'info) ----
+nova -> backend: "4. toolUse\n(besoin de données)" {
+  style.stroke: "#E65100"
+  style.stroke-dash: 3
+}
+backend -> kb: "5. retrieve_and_generate\n(la question)" {
+  style.stroke: "#6A1B9A"
+}
+kb -> backend: "6. Réponse texte\n(~3-4s)" {
+  style.stroke: "#6A1B9A"
+  style.stroke-dash: 3
+}
+backend -> nova: "7. toolResult\n(texte réponse)" {
+  style.stroke: "#E65100"
+  style.stroke-dash: 3
+}
+
+# ---- Flux retour (réponse vocale) ----
+nova -> backend: "8. audioOutput\n(voix générée)" {
+  style.stroke: "#00695C"
+  style.bold: true
+}
+backend -> browser: "9. Audio base64\n(WebSocket)" {
+  style.stroke: "#00695C"
+  style.bold: true
+}
+browser -> user: "10. Joue la réponse\n(haut-parleurs)" {
+  style.stroke: "#00695C"
+  style.bold: true
+}
+
+# ---- Barge-in (interruption) ----
+user -> backend: "Barge-in: si l'utilisateur\nparle, Nova coupe et\nle buffer audio est vidé" {
+  style.stroke: "#DD344C"
+  style.stroke-dash: 5
+  style.font-size: 11
+}
+
+# ---- Session refresh ----
+backend -> nova: "Session refresh auto\ntoutes les 4.5 min\n(évite timeout 8 min,\nhistorique préservé)" {
+  style.stroke: "#999"
+  style.stroke-dash: 5
+  style.font-size: 11
+}
+
+legend: |md
+  ### Légende
+  - **Trait plein** = flux principal voix (aller/retour)
+  - **Tirets orange** = tool use (appel de données)
+  - **Tirets violet** = requête vers la Knowledge Base
+  - **Tirets rouge** = barge-in (interruption)
+  - **Tirets gris** = session refresh automatique
+| {
+  near: bottom-center
+  shape: text
+  style.font-size: 12
+}
