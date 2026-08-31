@@ -50,7 +50,17 @@ class VoiceAgent extends React.Component {
         this.MAX_AUDIO_CHUNK_SIZE = 64 * 1024; // 64KB max per chunk
         this.MAX_AUDIO_BUFFER_SIZE = 5 * 1024 * 1024; // 5MB max total buffer (long KB responses)
         this.audioBufferSize = 0;
-        
+
+        // Local VAD (Voice Activity Detection) for instant barge-in.
+        // When the assistant is speaking and the user's mic energy stays above
+        // a threshold for a short duration, we clear the audio locally without
+        // waiting for Nova Sonic's server-side interruption signal.
+        this.VAD_RMS_THRESHOLD = 0.02;        // energy threshold (0-1); tune for your mic
+        this.VAD_TRIGGER_FRAMES = 3;          // consecutive loud frames needed (~100ms)
+        this.vadLoudFrameCount = 0;           // running counter of loud frames
+        this.assistantSpeaking = false;       // true while assistant audio is playing
+        this.lastLocalBargeIn = 0;            // timestamp of last local barge-in (debounce)
+
         this.socket = null;
         this.mediaRecorder = null;
         this.chatMessagesEndRef = React.createRef();
@@ -152,6 +162,7 @@ class VoiceAgent extends React.Component {
                     
                     const audioData = base64ToFloat32Array(base64Data);
                     this.audioPlayer.playAudio(audioData);
+                    this.assistantSpeaking = true;  // assistant is now playing audio
                 } catch (error) {
                     console.error("Error processing audio chunk:", error);
                 }
@@ -193,6 +204,7 @@ class VoiceAgent extends React.Component {
                 // Reset audio buffer counter when an audio turn ends normally
                 if (contentType === "AUDIO") {
                     this.audioBufferSize = 0;
+                    this.assistantSpeaking = false;  // assistant finished this audio turn
                 }
                 break;
                 
@@ -462,6 +474,39 @@ class VoiceAgent extends React.Component {
             processor.onaudioprocess = async (e) => {
                 if (this.state.sessionStarted) {
                     const inputBuffer = e.inputBuffer;
+                    const inputData = inputBuffer.getChannelData(0);
+
+                    // --- Local VAD barge-in ---
+                    // If the assistant is currently speaking, measure the user's
+                    // mic energy. If they're clearly talking, clear the assistant
+                    // audio immediately (don't wait for Nova Sonic's signal).
+                    if (this.assistantSpeaking) {
+                        let sumSquares = 0;
+                        for (let i = 0; i < inputData.length; i++) {
+                            sumSquares += inputData[i] * inputData[i];
+                        }
+                        const rms = Math.sqrt(sumSquares / inputData.length);
+
+                        if (rms > this.VAD_RMS_THRESHOLD) {
+                            this.vadLoudFrameCount++;
+                            if (this.vadLoudFrameCount >= this.VAD_TRIGGER_FRAMES) {
+                                const now = Date.now();
+                                // Debounce: at most one local barge-in per 500ms
+                                if (now - this.lastLocalBargeIn > 500) {
+                                    console.log(`Local VAD barge-in (rms=${rms.toFixed(3)}) — clearing assistant audio`);
+                                    this.cancelAudio();
+                                    this.assistantSpeaking = false;
+                                    this.lastLocalBargeIn = now;
+                                }
+                                this.vadLoudFrameCount = 0;
+                            }
+                        } else {
+                            // Reset counter on a quiet frame (require consecutive loud frames)
+                            this.vadLoudFrameCount = 0;
+                        }
+                    } else {
+                        this.vadLoudFrameCount = 0;
+                    }
 
                     // Create an offline context for resampling
                     const offlineContext = new OfflineAudioContext({
@@ -472,7 +517,6 @@ class VoiceAgent extends React.Component {
 
                     // Copy and resample the audio data
                     const offlineBuffer = offlineContext.createBuffer(1, offlineContext.length, targetSampleRate);
-                    const inputData = inputBuffer.getChannelData(0);
                     const outputData = offlineBuffer.getChannelData(0);
 
                     // Simple resampling
