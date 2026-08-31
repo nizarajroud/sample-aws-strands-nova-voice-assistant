@@ -60,6 +60,7 @@ class VoiceAgent extends React.Component {
         this.vadLoudFrameCount = 0;           // running counter of loud frames
         this.assistantSpeaking = false;       // true while assistant audio is playing
         this.lastLocalBargeIn = 0;            // timestamp of last local barge-in (debounce)
+        this.toolInProgress = false;          // true while a KB tool call is running (suspend VAD)
 
         this.socket = null;
         this.mediaRecorder = null;
@@ -119,6 +120,14 @@ class VoiceAgent extends React.Component {
         var chatMessages = this.state.chatMessages;
 
         switch(eventType) {
+            case "toolUse":
+                // A KB tool call is starting — suspend local VAD barge-in until
+                // the answer comes back (prevents overlapping tool calls that
+                // trigger Nova Sonic "Invalid input request").
+                this.toolInProgress = true;
+                console.log("Tool call in progress — VAD barge-in suspended");
+                break;
+
             case "textOutput": 
                 // Detect interruption
                 if (role === "ASSISTANT" && content && content.startsWith("{")) {
@@ -163,6 +172,7 @@ class VoiceAgent extends React.Component {
                     const audioData = base64ToFloat32Array(base64Data);
                     this.audioPlayer.playAudio(audioData);
                     this.assistantSpeaking = true;  // assistant is now playing audio
+                    this.toolInProgress = false;    // tool answer received, VAD can resume
                 } catch (error) {
                     console.error("Error processing audio chunk:", error);
                 }
@@ -480,7 +490,9 @@ class VoiceAgent extends React.Component {
                     // If the assistant is currently speaking, measure the user's
                     // mic energy. If they're clearly talking, clear the assistant
                     // audio immediately (don't wait for Nova Sonic's signal).
-                    if (this.assistantSpeaking) {
+                    // Suspended while a KB tool call is running (avoids overlapping
+                    // tool calls that Nova Sonic rejects as "Invalid input request").
+                    if (this.assistantSpeaking && !this.toolInProgress) {
                         let sumSquares = 0;
                         for (let i = 0; i < inputData.length; i++) {
                             sumSquares += inputData[i] * inputData[i];
