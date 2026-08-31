@@ -48,7 +48,7 @@ class VoiceAgent extends React.Component {
         
         // Audio processing limits for security
         this.MAX_AUDIO_CHUNK_SIZE = 64 * 1024; // 64KB max per chunk
-        this.MAX_AUDIO_BUFFER_SIZE = 1024 * 1024; // 1MB max total buffer
+        this.MAX_AUDIO_BUFFER_SIZE = 5 * 1024 * 1024; // 5MB max total buffer (long KB responses)
         this.audioBufferSize = 0;
         
         this.socket = null;
@@ -95,6 +95,7 @@ class VoiceAgent extends React.Component {
 
     cancelAudio() {
         this.audioPlayer.bargeIn();
+        this.audioBufferSize = 0;  // Reset cumulative counter on interruption
         this.setState({ isPlaying: false });
     }
 
@@ -188,6 +189,10 @@ class VoiceAgent extends React.Component {
                 if (stopReason === "END_TURN_INTERRUPTED" || stopReason === "INTERRUPTED") {
                     console.log("Barge-in detected! Clearing audio queue.");
                     this.cancelAudio();
+                }
+                // Reset audio buffer counter when an audio turn ends normally
+                if (contentType === "AUDIO") {
+                    this.audioBufferSize = 0;
                 }
                 break;
                 
