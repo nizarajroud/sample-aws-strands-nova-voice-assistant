@@ -30,7 +30,22 @@ export default class AudioPlayer {
                 await this.audioContext.audioWorklet.addModule(workletUrl);
                 console.log("Audio worklet module loaded successfully");
 
-                this.workletNode = new AudioWorkletNode(this.audioContext, "audio-player-processor");
+                // Small delay to ensure the processor is registered in the
+                // AudioWorkletGlobalScope before we instantiate the node.
+                // Without this, AudioWorkletNode construction can fail with
+                // "node name not defined" (race condition on first load).
+                let node = null;
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    try {
+                        node = new AudioWorkletNode(this.audioContext, "audio-player-processor");
+                        break;
+                    } catch (nodeErr) {
+                        if (attempt === 2) throw nodeErr;
+                        await new Promise(r => setTimeout(r, 100));
+                    }
+                }
+
+                this.workletNode = node;
                 this.workletNode.connect(this.analyser);
                 this.analyser.connect(this.audioContext.destination);
                 
