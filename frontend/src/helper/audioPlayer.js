@@ -62,8 +62,19 @@ export default class AudioPlayer {
                 type: "barge-in",
             });
         } else {
-            console.log("Barge-in called (fallback mode)");
-            // In fallback mode, we don't have worklet messaging
+            // Fallback mode: stop and disconnect all active buffer sources
+            console.log("Barge-in (fallback): stopping active audio sources");
+            if (this.activeSources) {
+                for (const src of this.activeSources) {
+                    try {
+                        src.stop();
+                        src.disconnect();
+                    } catch (e) {
+                        // Source may have already ended
+                    }
+                }
+                this.activeSources = [];
+            }
         }
     }
 
@@ -117,7 +128,13 @@ export default class AudioPlayer {
                 source.connect(this.gainNode);
                 source.start();
                 
-                console.log("Playing audio via fallback method");
+                // Track active sources so barge-in can stop them
+                if (!this.activeSources) this.activeSources = [];
+                this.activeSources.push(source);
+                source.onended = () => {
+                    const idx = this.activeSources.indexOf(source);
+                    if (idx !== -1) this.activeSources.splice(idx, 1);
+                };
             } catch (error) {
                 console.error("Error playing audio via fallback:", error);
             }
