@@ -55,8 +55,8 @@ class VoiceAgent extends React.Component {
         // When the assistant is speaking and the user's mic energy stays above
         // a threshold for a short duration, we clear the audio locally without
         // waiting for Nova Sonic's server-side interruption signal.
-        this.VAD_RMS_THRESHOLD = 0.02;        // energy threshold (0-1); tune for your mic
-        this.VAD_TRIGGER_FRAMES = 3;          // consecutive loud frames needed (~100ms)
+        this.VAD_RMS_THRESHOLD = 0.15;        // energy threshold (0-1); high enough to ignore speaker echo
+        this.VAD_TRIGGER_FRAMES = 4;          // consecutive loud frames needed (~130ms of real speech)
         this.vadLoudFrameCount = 0;           // running counter of loud frames
         this.assistantSpeaking = false;       // true while assistant audio is playing
         this.lastLocalBargeIn = 0;            // timestamp of last local barge-in (debounce)

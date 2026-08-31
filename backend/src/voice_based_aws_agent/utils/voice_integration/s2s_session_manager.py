@@ -52,6 +52,8 @@ class S2sSessionManager:
         self.is_active = False
         self.bedrock_client = None
         self._refreshing = False  # Lock to prevent audio during refresh
+        self._tool_in_progress = False  # True while a tool call is being processed
+        self._last_activity = 0  # Timestamp of last assistant output (for idle detection)
         
         # Session information
         self.prompt_name = None
@@ -111,17 +113,38 @@ class S2sSessionManager:
             raise
     
     async def _session_refresh_timer(self):
-        """Timer that triggers session refresh before the 8-min timeout."""
+        """Timer that triggers session refresh before the 8-min timeout.
+        Waits for a quiet moment (no active tool call / audio generation)
+        so the refresh never interrupts a response in progress."""
         try:
             while self.is_active:
                 await asyncio.sleep(SESSION_REFRESH_INTERVAL)
+                if not self.is_active or self._refreshing:
+                    continue
+
+                # Wait until the session is idle before refreshing.
+                # Avoid cutting off an in-progress tool call or spoken response.
+                max_wait = 60  # don't wait more than 60s past the interval
+                waited = 0
+                while self.is_active and self._is_busy() and waited < max_wait:
+                    await asyncio.sleep(1)
+                    waited += 1
+
                 if self.is_active and not self._refreshing:
-                    logger.info("Session refresh triggered (preventing timeout)")
+                    logger.info(f"Session refresh triggered (idle after {waited}s wait)")
                     await self._refresh_session()
         except asyncio.CancelledError:
             pass
         except Exception as e:
             logger.error(f"Session refresh timer error: {e}")
+
+    def _is_busy(self):
+        """True if a tool call is in progress or the assistant is generating.
+        Used to defer session refresh to a quiet moment."""
+        # Busy if a tool use was detected but not yet fully resolved,
+        # or if we received assistant output very recently (< 3s ago).
+        recent_activity = (time.time() - getattr(self, "_last_activity", 0)) < 3
+        return self._tool_in_progress or recent_activity
 
     async def _refresh_session(self):
         """Refresh the Nova Sonic session while maintaining conversation context."""
@@ -335,7 +358,11 @@ class S2sSessionManager:
                     event_name = None
                     if 'event' in json_data:
                         event_name = list(json_data["event"].keys())[0]
-                        
+
+                        # Track activity for idle-detection (defers session refresh)
+                        if event_name in ('textOutput', 'audioOutput', 'toolUse', 'contentStart'):
+                            self._last_activity = time.time()
+
                         # Track conversation history (text outputs from assistant)
                         if event_name == 'textOutput':
                             content = json_data['event']['textOutput'].get('content', '')
@@ -347,6 +374,7 @@ class S2sSessionManager:
                         
                         # Handle tool use detection
                         if event_name == 'toolUse':
+                            self._tool_in_progress = True
                             self.toolUseContent = json_data['event']['toolUse']
                             self.toolName = json_data['event']['toolUse']['toolName']
                             self.toolUseId = json_data['event']['toolUse']['toolUseId']
@@ -376,6 +404,8 @@ class S2sSessionManager:
                             # Send tool content end event
                             tool_content_end_event = S2sEvent.content_end(prompt_name, toolContent)
                             await self.send_raw_event(tool_content_end_event)
+                            self._tool_in_progress = False  # tool call complete
+                            self._last_activity = time.time()
                     
                     # Put the response in the output queue for forwarding to frontend
                     await self.output_queue.put(json_data)
