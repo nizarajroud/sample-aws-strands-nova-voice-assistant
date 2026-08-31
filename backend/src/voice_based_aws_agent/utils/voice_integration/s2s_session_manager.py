@@ -22,7 +22,7 @@ logger = logging.getLogger("S2sSessionManager")
 DEBUG = False
 
 # Session refresh config
-SESSION_REFRESH_INTERVAL = 270  # 4.5 minutes (well before 8-min timeout)
+SESSION_REFRESH_INTERVAL = 240  # 4 minutes (leaves margin before 8-min timeout + wait)
 MAX_HISTORY_MESSAGES = 10  # Keep last N exchanges for context
 
 
@@ -54,6 +54,7 @@ class S2sSessionManager:
         self._refreshing = False  # Lock to prevent audio during refresh
         self._tool_in_progress = False  # True while a tool call is being processed
         self._last_activity = 0  # Timestamp of last assistant output (for idle detection)
+        self._playback_end = 0  # Estimated timestamp when client audio playback finishes
         
         # Session information
         self.prompt_name = None
@@ -124,7 +125,7 @@ class S2sSessionManager:
 
                 # Wait until the session is idle before refreshing.
                 # Avoid cutting off an in-progress tool call or spoken response.
-                max_wait = 60  # don't wait more than 60s past the interval
+                max_wait = 180  # allow up to 3 min for a long response to finish
                 waited = 0
                 while self.is_active and self._is_busy() and waited < max_wait:
                     await asyncio.sleep(1)
@@ -139,12 +140,18 @@ class S2sSessionManager:
             logger.error(f"Session refresh timer error: {e}")
 
     def _is_busy(self):
-        """True if a tool call is in progress or the assistant is generating.
-        Used to defer session refresh to a quiet moment."""
-        # Busy if a tool use was detected but not yet fully resolved,
-        # or if we received assistant output very recently (< 3s ago).
-        recent_activity = (time.time() - getattr(self, "_last_activity", 0)) < 3
-        return self._tool_in_progress or recent_activity
+        """True if a tool call is in progress or the assistant is still speaking.
+
+        Nova Sonic generates audio faster than real-time, so audioOutput events
+        stop arriving well before the user finishes hearing the response. We
+        estimate the true playback-end time from the accumulated audio duration
+        and treat the session as busy until playback is actually done."""
+        now = time.time()
+        # Still hearing audio? (estimated playback end is in the future)
+        playing = now < getattr(self, "_playback_end", 0)
+        # Small grace window after last event for text/tool activity
+        recent_activity = (now - getattr(self, "_last_activity", 0)) < 3
+        return self._tool_in_progress or playing or recent_activity
 
     async def _refresh_session(self):
         """Refresh the Nova Sonic session while maintaining conversation context."""
@@ -360,8 +367,22 @@ class S2sSessionManager:
                         event_name = list(json_data["event"].keys())[0]
 
                         # Track activity for idle-detection (defers session refresh)
-                        if event_name in ('textOutput', 'audioOutput', 'toolUse', 'contentStart'):
+                        if event_name in ('textOutput', 'toolUse', 'contentStart'):
                             self._last_activity = time.time()
+
+                        # For audioOutput: estimate playback end time. Nova Sonic
+                        # sends audio faster than real-time, so we accumulate the
+                        # audio duration to know when the user will actually finish
+                        # hearing it. 24kHz, 16-bit mono → 48000 bytes per second.
+                        if event_name == 'audioOutput':
+                            b64 = json_data['event']['audioOutput'].get('content', '')
+                            # base64 → ~3/4 bytes, then / 48000 bytes-per-sec
+                            audio_bytes = len(b64) * 3 / 4
+                            audio_seconds = audio_bytes / 48000.0
+                            now = time.time()
+                            # Extend the playback-end estimate
+                            self._playback_end = max(getattr(self, "_playback_end", now), now) + audio_seconds
+                            self._last_activity = now
 
                         # Track conversation history (text outputs from assistant)
                         if event_name == 'textOutput':
