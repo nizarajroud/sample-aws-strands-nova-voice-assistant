@@ -36,6 +36,12 @@ VOICE_MCPS = [
     "agentcore-memory",
 ]
 
+# Context scope for memory search — the voice assistant focuses ONLY on
+# sessions from this folder + agent (via cascading_search). This keeps the
+# search fast (semantic top-k, not a full scan) and relevant.
+MEMORY_CURRENT_FOLDER = "/home/nizar/workspace/Trainings/bnv-redef"
+MEMORY_CURRENT_AGENT = "exp2"
+
 
 def _load_env_file():
     """Load environment variables from ~/.kiro/.env."""
@@ -165,16 +171,19 @@ class MCPDaemon:
 
         self.agent = Agent(
             model=model,
-            system_prompt="""You are a helpful personal assistant for Nizar.
+            system_prompt=f"""You are a helpful personal assistant for Nizar.
 You have access to a conversational memory tool (agentcore-memory) that stores
-the history of Nizar's past kiro-cli sessions and conversations.
-When asked a question, search this memory to find relevant context.
+the history of Nizar's past kiro-cli sessions.
 
 CRITICAL TOOL USAGE:
-- When calling memory tools, do NOT pass an actor_id parameter — leave it empty
-  so the tool resolves the current user automatically. Never invent values like
-  "$USER" or "nizar" for actor_id.
-- Use the query/search parameters to find relevant conversations.
+- To answer questions, ALWAYS use the `cascading_search` tool.
+- ALWAYS pass these exact parameters to cascading_search:
+    query          = the user's question (natural language)
+    current_folder = "{MEMORY_CURRENT_FOLDER}"
+    current_agent  = "{MEMORY_CURRENT_AGENT}"
+- Do NOT pass an actor_id — let the tool resolve it automatically.
+- This scopes the search to the relevant project sessions (fast + relevant).
+- Do NOT use search_conversation_history (it is slow).
 
 Answer concisely — responses are spoken aloud (2-3 sentences max).
 Respond in the same language as the question.
